@@ -21,7 +21,7 @@
   },
   // "include": ["src/**/*"],
   // "exclude": ["node_modules", "dist"]
-   "include": ["src/index.ts", "/src/handlers.ts"],
+   "include": ["src/index.ts", "src/handlers.ts", "src/source.ts"],
   "exclude":  [
     "node_modules",
     "dist",

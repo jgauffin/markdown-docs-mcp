@@ -5,7 +5,6 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import path from "path";
 import {
   handleGetDocIndex,
   handleReadDocFile,
@@ -14,6 +13,7 @@ import {
   handleSearchDocs,
   textResult,
 } from "./handlers.js";
+import { createSource } from "./source.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -42,12 +42,12 @@ function parseArgs(argv: string[]) {
 const { docsFolder, name, description } = parseArgs(process.argv);
 if (!docsFolder) {
   console.error(
-    "Usage: markdown-mcp <docs-folder> [--name <name>] [--description <text>]"
+    "Usage: markdown-mcp <docs-folder-or-github-url> [--name <name>] [--description <text>]"
   );
   process.exit(1);
 }
-const DOCS_ROOT = path.resolve(docsFolder);
 
+const source = createSource(docsFolder);
 const SERVER_NAME = name ?? "markdown-mcp";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -161,23 +161,23 @@ mcpServer.server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   switch (name) {
     case "get_doc_index":
-      return handleGetDocIndex(DOCS_ROOT);
+      return handleGetDocIndex(source);
     case "read_doc_file":
-      return handleReadDocFile(args as { file_path: string }, DOCS_ROOT);
+      return handleReadDocFile(args as { file_path: string }, source);
     case "get_file_toc":
       return handleGetFileToc(
         args as { file_path: string; include_abstracts?: boolean },
-        DOCS_ROOT
+        source
       );
     case "get_chapters":
       return handleGetChapters(
         args as { file_path: string; headings: string[] },
-        DOCS_ROOT
+        source
       );
     case "search_docs":
       return handleSearchDocs(
         args as { query: string; path_pattern?: string },
-        DOCS_ROOT
+        source
       );
     default:
       return textResult(`Unknown tool: ${name}`, true);

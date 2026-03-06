@@ -1,32 +1,8 @@
-import fs from "fs/promises";
-import path from "path";
-import glob from "fast-glob";
+import type { DocsSource } from "./source.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Utilities
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Resolves a doc file path to absolute within docsRoot.
- * Returns null if path escapes docsRoot (security).
- */
-export function resolveDocPath(inputPath: string, docsRoot: string): string | null {
-  let relativePath = inputPath;
-
-  if (!relativePath.endsWith(".md")) {
-    relativePath += ".md";
-  }
-
-  const normalizedDocsRoot = path.normalize(docsRoot);
-  const absolutePath = path.resolve(normalizedDocsRoot, relativePath);
-
-  // Prevent directory traversal
-  if (!absolutePath.startsWith(normalizedDocsRoot)) {
-    return null;
-  }
-
-  return absolutePath;
-}
 
 /**
  * Extracts markdown headers as a table of contents.
@@ -106,21 +82,19 @@ export function textResult(text: string, isError = false): ToolResult {
   return { content: [{ type: "text", text }], isError };
 }
 
-export async function handleGetDocIndex(docsRoot: string): Promise<ToolResult> {
-  const files = await glob("**/*.md", { cwd: docsRoot });
+export async function handleGetDocIndex(source: DocsSource): Promise<ToolResult> {
+  const files = await source.listFiles("**/*.md");
   if (files.length === 0) {
-    return textResult(`No documentation files found in ${docsRoot}`, true);
+    return textResult("No documentation files found.", true);
   }
 
   const entries: string[] = [];
   for (const file of files) {
-    const absPath = path.join(docsRoot, file);
-    const content = await fs.readFile(absPath, "utf-8");
+    const content = await source.readFile(file);
     const lines = content.split("\n");
 
     const title = lines[0]?.replace(/^#\s+/, "") || "(No title)";
 
-    // Find the first non-empty line after the heading as abstract
     let abstract = "";
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i]!.trim();
@@ -137,35 +111,32 @@ export async function handleGetDocIndex(docsRoot: string): Promise<ToolResult> {
   return textResult(`## Documentation Index\n\n${entries.join("\n")}`);
 }
 
-export async function handleReadDocFile(args: { file_path?: string }, docsRoot: string): Promise<ToolResult> {
+export async function handleReadDocFile(args: { file_path?: string }, source: DocsSource): Promise<ToolResult> {
   if (!args.file_path) {
     return textResult("Invalid arguments: file_path is required.", true);
   }
 
-  const absPath = resolveDocPath(args.file_path, docsRoot);
-  if (!absPath) {
+  const resolved = source.resolvePath(args.file_path);
+  if (!resolved) {
     return textResult("Invalid path or security violation.", true);
   }
 
   try {
-    const content = await fs.readFile(absPath, "utf-8");
+    const content = await source.readFile(resolved);
     return textResult(content);
   } catch {
-    return textResult(
-      `File not found: ${args.file_path} (resolved: ${absPath})`,
-      true
-    );
+    return textResult(`File not found: ${args.file_path}`, true);
   }
 }
 
-export async function handleGetFileToc(args: { file_path: string; include_abstracts?: boolean }, docsRoot: string): Promise<ToolResult> {
-  const absPath = resolveDocPath(args.file_path, docsRoot);
-  if (!absPath) {
+export async function handleGetFileToc(args: { file_path: string; include_abstracts?: boolean }, source: DocsSource): Promise<ToolResult> {
+  const resolved = source.resolvePath(args.file_path);
+  if (!resolved) {
     return textResult("Invalid path.", true);
   }
 
   try {
-    const content = await fs.readFile(absPath, "utf-8");
+    const content = await source.readFile(resolved);
     const toc = extractToc(content, args.include_abstracts ?? false);
     return textResult(
       `## Table of Contents for ${args.file_path}\n\n${toc.join("\n")}`
@@ -175,14 +146,14 @@ export async function handleGetFileToc(args: { file_path: string; include_abstra
   }
 }
 
-export async function handleGetChapters(args: { file_path: string; headings: string[] }, docsRoot: string): Promise<ToolResult> {
-  const absPath = resolveDocPath(args.file_path, docsRoot);
-  if (!absPath) {
+export async function handleGetChapters(args: { file_path: string; headings: string[] }, source: DocsSource): Promise<ToolResult> {
+  const resolved = source.resolvePath(args.file_path);
+  if (!resolved) {
     return textResult("Invalid path or security violation.", true);
   }
 
   try {
-    const content = await fs.readFile(absPath, "utf-8");
+    const content = await source.readFile(resolved);
     const chapters = extractChapters(content, args.headings);
 
     if (chapters.size === 0) {
@@ -201,7 +172,7 @@ export async function handleGetChapters(args: { file_path: string; headings: str
   }
 }
 
-export async function handleSearchDocs(args: { query: string; path_pattern?: string }, docsRoot: string): Promise<ToolResult> {
+export async function handleSearchDocs(args: { query: string; path_pattern?: string }, source: DocsSource): Promise<ToolResult> {
   const { query, path_pattern } = args;
 
   let regex: RegExp;
@@ -211,7 +182,6 @@ export async function handleSearchDocs(args: { query: string; path_pattern?: str
     return textResult(`Invalid regex pattern: ${query}`, true);
   }
 
-  // Build glob pattern: ensure it matches .md files
   let globPattern = "**/*.md";
   if (path_pattern) {
     if (path_pattern.endsWith(".md")) {
@@ -225,12 +195,11 @@ export async function handleSearchDocs(args: { query: string; path_pattern?: str
     }
   }
 
-  const files = await glob(globPattern, { cwd: docsRoot });
+  const files = await source.listFiles(globPattern);
   const results: string[] = [];
 
   for (const file of files) {
-    const absPath = path.join(docsRoot, file);
-    const content = await fs.readFile(absPath, "utf-8");
+    const content = await source.readFile(file);
 
     content.split("\n").forEach((line, i) => {
       if (regex.test(line)) {

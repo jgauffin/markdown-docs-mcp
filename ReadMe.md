@@ -4,19 +4,13 @@ An MCP (Model Context Protocol) server for browsing and searching Markdown docum
 
 ## Why use this instead of direct file access?
 
-When an AI agent has direct file system access to documentation, several issues arise:
-
-- **Security risk** - The agent can potentially read/write anywhere on the filesystem
-- **Inefficient** - The agent must scan directories and read files one-by-one to find information
-- **Context bloat** - Large files consume valuable context window tokens
-- **No structure** - The agent has no overview of what documentation exists
-
-This MCP server solves these problems:
-
-- **Sandboxed** - Access is restricted to a single docs directory with directory traversal protection
-- **Indexed** - `get_framework_index` provides instant overview of all available docs
-- **Searchable** - `search_docs` finds relevant content across all files with regex support
-- **Structured** - `get_file_toc` extracts headers so the agent can navigate large files efficiently
+|  | Direct file access | Markdown MCP |
+|---|---|---|
+| **Security** | Agent can read/write anywhere on the filesystem | Sandboxed to a single docs directory with traversal protection |
+| **Discovery** | Agent must scan directories and read files one-by-one | `get_doc_index` provides instant overview of all available docs |
+| **Search** | Agent greps files manually, burning context | `search_docs` finds content across all files with regex support |
+| **Large files** | Entire file loaded into context window | `get_file_toc` + `get_chapters` lets the agent read only the sections it needs |
+| **Source** | Local files only | Local directories or GitHub URLs — no cloning required |
 
 ## Installation
 
@@ -28,27 +22,41 @@ npm run build
 ## Usage
 
 ```bash
-markdown-mcp <docs-folder> [--name <name>] [--description <text>]
+markdown-mcp <docs-folder-or-github-url> [--name <name>] [--description <text>]
 ```
 
 | Option | Description |
 |---|---|
-| `<docs-folder>` | Path to the documentation directory (required) |
+| `<docs-folder-or-github-url>` | Path to a local documentation directory **or** a GitHub URL (required) |
 | `--name <name>` | Documentation title (e.g. "RelaxJS documentation"). Used as the MCP server name and injected into tool descriptions so the AI knows which docs it's browsing. |
 | `--description <text>` | Describes what the documentation covers. Sent as the MCP server description. |
 
+The source can be:
+- A **local directory** — e.g. `./docs` or `/path/to/docs`
+- A **GitHub URL** — e.g. `https://github.com/owner/repo/tree/main/docs`
+
+### Supported GitHub URL formats
+
+| URL | Resolved as |
+|---|---|
+| `https://github.com/owner/repo` | Root of `main` branch |
+| `https://github.com/owner/repo/tree/branch` | Root of specified branch |
+| `https://github.com/owner/repo/tree/branch/path/to/docs` | Subfolder of specified branch |
+
+For private repositories, set the `GITHUB_TOKEN` environment variable.
+
 ### Examples
 
-Minimal (no title/description):
+Local directory:
 
 ```bash
 node dist/index.js ./docs
 ```
 
-With title only:
+GitHub repository (docs subfolder):
 
 ```bash
-node dist/index.js ./docs --name "RelaxJS documentation"
+node dist/index.js https://github.com/user/my-project/tree/main/docs --name "My Project"
 ```
 
 With title and description:
@@ -59,10 +67,16 @@ node dist/index.js ./docs --name "RelaxJS documentation" --description "Usage an
 
 ### Claude Code
 
-Add as a project-scoped server:
+Add as a project-scoped server (local):
 
 ```bash
 claude mcp add relaxjs-docs -- node /path/to/markdown-mcp/dist/index.js /path/to/relaxjs/docs --name "RelaxJS documentation" --description "Usage and API docs for a lightweight JavaScript framework for building streamlined UIs"
+```
+
+Add as a project-scoped server (GitHub):
+
+```bash
+claude mcp add relaxjs-docs -- node /path/to/markdown-mcp/dist/index.js https://github.com/user/relaxjs/tree/main/docs --name "RelaxJS documentation" --description "Usage and API docs for a lightweight JavaScript framework for building streamlined UIs"
 ```
 
 Or add globally (available in all projects):
@@ -82,10 +96,30 @@ Add to `claude_desktop_config.json`:
       "command": "node",
       "args": [
         "/path/to/markdown-mcp/dist/index.js",
-        "/path/to/relaxjs/docs",
+        "https://github.com/user/relaxjs/tree/main/docs",
         "--name", "RelaxJS",
         "--description", "Usage and API docs for a lightweight JavaScript framework for building streamlined UIs"
       ]
+    }
+  }
+}
+```
+
+For private repos, add the token to the environment:
+
+```json
+{
+  "mcpServers": {
+    "private-docs": {
+      "command": "node",
+      "args": [
+        "/path/to/markdown-mcp/dist/index.js",
+        "https://github.com/org/private-repo/tree/main/docs",
+        "--name", "Private Docs"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      }
     }
   }
 }
