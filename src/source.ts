@@ -376,6 +376,21 @@ export class GitCloneSource implements DocsSource {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Source config
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface SourceConfig {
+  /** "disk" for local directories, "github" for GitHub repositories. */
+  type: "disk" | "github";
+  /** Local path or GitHub URL. */
+  origin: string;
+  /** What the source provides. */
+  kind: "docs" | "api";
+  /** Subfolder within the origin (especially useful for GitHub repos). */
+  folder?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Factory
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -392,4 +407,33 @@ export function createSource(
     return new GitHubSource(ghRef);
   }
   return new FileSystemSource(path.resolve(docsFolder));
+}
+
+export function createSourceFromConfig(
+  source: SourceConfig,
+  cacheDir?: string,
+  updateIntervalMs?: number,
+): DocsSource {
+  if (source.type === "github") {
+    const ghRef = parseGitHubUrl(source.origin);
+    if (!ghRef) throw new Error(`Invalid GitHub URL: ${source.origin}`);
+
+    // Append folder to the repo's basePath
+    if (source.folder) {
+      ghRef.basePath = ghRef.basePath
+        ? `${ghRef.basePath}/${source.folder}`
+        : source.folder;
+    }
+
+    if (cacheDir) {
+      return new GitCloneSource(ghRef, cacheDir, updateIntervalMs ?? 60 * 60_000);
+    }
+    return new GitHubSource(ghRef);
+  }
+
+  // Disk source
+  const dir = source.folder
+    ? path.resolve(source.origin, source.folder)
+    : path.resolve(source.origin);
+  return new FileSystemSource(dir);
 }
