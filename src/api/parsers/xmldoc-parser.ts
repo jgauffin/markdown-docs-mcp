@@ -120,6 +120,9 @@ export class XmlDocParser implements ApiDocParser {
     const doc = (parsed as Record<string, unknown>)?.doc as Record<string, unknown> | undefined;
     if (!doc) return [];
 
+    const assemblyNode = doc.assembly as Record<string, unknown> | undefined;
+    const pkg = typeof assemblyNode?.name === "string" ? (assemblyNode.name as string) : undefined;
+
     const membersContainer = doc.members as Record<string, unknown> | undefined;
     if (!membersContainer) return [];
 
@@ -146,6 +149,7 @@ export class XmlDocParser implements ApiDocParser {
               name: parsed.typeName,
               fullName: typeKey,
               kind: "class", // XmlDoc doesn't distinguish in the XML; default to class
+              package: pkg,
               summary: extractText(member.summary) || undefined,
               remarks: extractText(member.remarks) || undefined,
               members: [],
@@ -168,6 +172,7 @@ export class XmlDocParser implements ApiDocParser {
             name: parsed.typeName,
             fullName: typeKey,
             kind: "class",
+            package: pkg,
             members: [],
           },
         });

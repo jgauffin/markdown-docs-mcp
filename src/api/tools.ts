@@ -4,10 +4,16 @@ export const API_TOOLS: Tool[] = [
   {
     name: "get_api_index",
     description:
-      "Returns the API documentation index: all namespaces and types with summaries and member counts. Use get_api_type to drill into a specific type.",
+      "Returns the API documentation index: all namespaces and types with summaries and member counts. Each type includes its source package (e.g. npm package / .NET assembly / crate name). Use get_api_type to drill into a specific type, or pass a package filter to narrow the index.",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        package: {
+          type: "string",
+          description:
+            "Optional. Limit the index to types from this package (e.g. 'MyLib.Client', '@relax.js/core'). Use list_libraries first if you need to discover what's available.",
+        },
+      },
       required: [],
     },
   },
@@ -22,6 +28,11 @@ export const API_TOOLS: Tool[] = [
           type: "string",
           description:
             "Type name to look up. Can be short name (e.g., 'User'), full name (e.g., 'MyLib.Models.User'), or partial match.",
+        },
+        package: {
+          type: "string",
+          description:
+            "Optional. Disambiguate when the same type name exists in multiple packages.",
         },
       },
       required: ["type_name"],
@@ -43,6 +54,11 @@ export const API_TOOLS: Tool[] = [
           description:
             "The member name to look up (e.g., 'GetById', 'Name', 'constructor').",
         },
+        package: {
+          type: "string",
+          description:
+            "Optional. Disambiguate when the same type name exists in multiple packages.",
+        },
       },
       required: ["type_name", "member_name"],
     },
@@ -50,7 +66,7 @@ export const API_TOOLS: Tool[] = [
   {
     name: "search_api",
     description:
-      "Search API documentation using regex (case insensitive). Searches across type names, member names, signatures, and summaries.",
+      "Search API documentation using regex (case insensitive). Searches across type names, member names, signatures, and summaries. Optionally scope to a specific package.",
     inputSchema: {
       type: "object",
       properties: {
@@ -58,6 +74,11 @@ export const API_TOOLS: Tool[] = [
           type: "string",
           description:
             "Regex pattern to search for (case insensitive).",
+        },
+        package: {
+          type: "string",
+          description:
+            "Optional. Limit results to types from this package.",
         },
       },
       required: ["query"],

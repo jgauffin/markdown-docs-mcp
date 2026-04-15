@@ -358,16 +358,22 @@ const handleCallTool = async (request: { params: { name: string; arguments?: Rec
   if (library.apiIndex) {
     switch (toolName) {
       case "get_api_index":
-        return handleGetApiIndex(library.apiIndex);
+        return handleGetApiIndex(args as { package?: string }, library.apiIndex);
       case "get_api_type":
-        return handleGetApiType(args as { type_name: string }, library.apiIndex);
+        return handleGetApiType(
+          args as { type_name: string; package?: string },
+          library.apiIndex,
+        );
       case "get_api_member":
         return handleGetApiMember(
-          args as { type_name: string; member_name: string },
+          args as { type_name: string; member_name: string; package?: string },
           library.apiIndex,
         );
       case "search_api":
-        return handleSearchApi(args as { query: string }, library.apiIndex);
+        return handleSearchApi(
+          args as { query: string; package?: string },
+          library.apiIndex,
+        );
     }
   }
 

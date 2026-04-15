@@ -142,7 +142,7 @@ describe("API Handlers (XmlDoc)", () => {
 
   describe("handleGetApiIndex", () => {
     it("returns namespaces and types", async () => {
-      const result = await handleGetApiIndex(apiIndex);
+      const result = await handleGetApiIndex(undefined, apiIndex);
       expect(result.isError).toBeFalsy();
       expect(result.content[0]!.text).toContain("api_index:");
       expect(result.content[0]!.text).toContain("TestLib.Models");

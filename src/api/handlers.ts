@@ -74,29 +74,39 @@ export class ApiDocIndex {
     return this.namespaces;
   }
 
-  findType(typeName: string): { ns: ApiNamespace; type: ApiType } | null {
+  findType(typeName: string, pkg?: string): { ns: ApiNamespace; type: ApiType } | null {
     if (!this.namespaces) return null;
     const lower = typeName.toLowerCase();
+    const pkgLower = pkg?.toLowerCase();
+    const pkgMatch = (t: ApiType) => !pkgLower || t.package?.toLowerCase() === pkgLower;
 
-    // Try exact fullName match first
     for (const ns of this.namespaces) {
       for (const type of ns.types) {
-        if (type.fullName.toLowerCase() === lower) return { ns, type };
+        if (pkgMatch(type) && type.fullName.toLowerCase() === lower) return { ns, type };
       }
     }
-    // Try short name match
     for (const ns of this.namespaces) {
       for (const type of ns.types) {
-        if (type.name.toLowerCase() === lower) return { ns, type };
+        if (pkgMatch(type) && type.name.toLowerCase() === lower) return { ns, type };
       }
     }
-    // Try partial match (contains)
     for (const ns of this.namespaces) {
       for (const type of ns.types) {
-        if (type.fullName.toLowerCase().includes(lower)) return { ns, type };
+        if (pkgMatch(type) && type.fullName.toLowerCase().includes(lower)) return { ns, type };
       }
     }
     return null;
+  }
+
+  listPackages(): string[] {
+    if (!this.namespaces) return [];
+    const set = new Set<string>();
+    for (const ns of this.namespaces) {
+      for (const type of ns.types) {
+        if (type.package) set.add(type.package);
+      }
+    }
+    return [...set].sort();
   }
 }
 
@@ -171,18 +181,45 @@ function formatMemberFull(m: ApiMember, indent: number): string {
 // Tool Handlers
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function handleGetApiIndex(index: ApiDocIndex): Promise<ToolResult> {
-  const namespaces = await index.getNamespaces();
+export async function handleGetApiIndex(
+  args: { package?: string } | undefined,
+  index: ApiDocIndex,
+): Promise<ToolResult> {
+  const pkgFilter = args?.package?.toLowerCase();
+
+  const allNs = await index.getNamespaces();
+
+  // Filter namespaces/types to the requested package if given.
+  const namespaces = pkgFilter
+    ? allNs
+        .map((ns) => ({
+          name: ns.name,
+          types: ns.types.filter((t) => t.package?.toLowerCase() === pkgFilter),
+        }))
+        .filter((ns) => ns.types.length > 0)
+    : allNs;
 
   if (namespaces.length === 0) {
+    if (pkgFilter) {
+      const packages = index.listPackages();
+      return textResult(
+        `error: No types found for package "${args?.package}". Available packages: ${packages.join(", ") || "(none)"}`,
+        true,
+      );
+    }
     return textResult("error: No API documentation found.", true);
   }
 
   const totalTypes = namespaces.reduce((sum, ns) => sum + ns.types.length, 0);
+  const packages = index.listPackages();
 
   let yaml = 'api_index:\n';
   yaml += ` total_namespaces: ${namespaces.length}\n`;
   yaml += ` total_types: ${totalTypes}\n`;
+  if (packages.length > 0) {
+    yaml += ` packages:\n`;
+    for (const p of packages) yaml += `  - ${yStr(p)}\n`;
+  }
   yaml += ' namespaces:\n';
 
   for (const ns of namespaces) {
@@ -190,20 +227,20 @@ export async function handleGetApiIndex(index: ApiDocIndex): Promise<ToolResult>
     yaml += `    types:\n`;
 
     if (totalTypes <= INDEX_THRESHOLD) {
-      // Show full type details with member summaries
       for (const type of ns.types) {
         yaml += `     - name: ${yStr(type.name)}\n`;
         yaml += `       fullName: ${yStr(type.fullName)}\n`;
         yaml += `       kind: ${type.kind}`;
+        if (type.package) yaml += `\n       package: ${yStr(type.package)}`;
         if (type.summary) yaml += `\n       summary: ${yStr(type.summary)}`;
         yaml += `\n       members: ${type.members.length}`;
         yaml += '\n';
       }
     } else {
-      // Compact: just name and member count
       for (const type of ns.types) {
         yaml += `     - name: ${yStr(type.name)}\n`;
         yaml += `       kind: ${type.kind}\n`;
+        if (type.package) yaml += `       package: ${yStr(type.package)}\n`;
         yaml += `       members: ${type.members.length}\n`;
       }
     }
@@ -213,19 +250,19 @@ export async function handleGetApiIndex(index: ApiDocIndex): Promise<ToolResult>
 }
 
 export async function handleGetApiType(
-  args: { type_name?: string },
+  args: { type_name?: string; package?: string },
   index: ApiDocIndex
 ): Promise<ToolResult> {
   if (!args.type_name) {
     return textResult("error: type_name is required.", true);
   }
 
-  // Ensure index is loaded
   await index.getNamespaces();
 
-  const found = index.findType(args.type_name);
+  const found = index.findType(args.type_name, args.package);
   if (!found) {
-    return textResult(`error: Type not found: ${args.type_name}`, true);
+    const suffix = args.package ? ` in package "${args.package}"` : "";
+    return textResult(`error: Type not found: ${args.type_name}${suffix}`, true);
   }
 
   const { ns, type } = found;
@@ -235,6 +272,7 @@ export async function handleGetApiType(
   yaml += ` name: ${yStr(type.name)}\n`;
   yaml += ` fullName: ${yStr(type.fullName)}\n`;
   yaml += ` kind: ${type.kind}\n`;
+  if (type.package) yaml += ` package: ${yStr(type.package)}\n`;
   if (type.summary) yaml += ` summary: ${yStr(type.summary)}\n`;
   if (type.remarks) yaml += ` remarks: ${yStr(type.remarks)}\n`;
   yaml += ` members:\n`;
@@ -247,7 +285,7 @@ export async function handleGetApiType(
 }
 
 export async function handleGetApiMember(
-  args: { type_name?: string; member_name?: string },
+  args: { type_name?: string; member_name?: string; package?: string },
   index: ApiDocIndex
 ): Promise<ToolResult> {
   if (!args.type_name) {
@@ -259,9 +297,10 @@ export async function handleGetApiMember(
 
   await index.getNamespaces();
 
-  const found = index.findType(args.type_name);
+  const found = index.findType(args.type_name, args.package);
   if (!found) {
-    return textResult(`error: Type not found: ${args.type_name}`, true);
+    const suffix = args.package ? ` in package "${args.package}"` : "";
+    return textResult(`error: Type not found: ${args.type_name}${suffix}`, true);
   }
 
   const lowerMember = args.member_name.toLowerCase();
@@ -286,7 +325,7 @@ export async function handleGetApiMember(
 }
 
 export async function handleSearchApi(
-  args: { query?: string },
+  args: { query?: string; package?: string },
   index: ApiDocIndex
 ): Promise<ToolResult> {
   if (!args.query) {
@@ -305,22 +344,24 @@ export async function handleSearchApi(
   }
 
   const namespaces = await index.getNamespaces();
+  const pkgFilter = args.package?.toLowerCase();
   const MAX_RESULTS = 50;
-  const results: { type: string; member?: string; kind: string; summary?: string }[] = [];
+  const results: { type: string; package?: string; member?: string; kind: string; summary?: string }[] = [];
 
   for (const ns of namespaces) {
     for (const type of ns.types) {
-      // Search type name and summary
+      if (pkgFilter && type.package?.toLowerCase() !== pkgFilter) continue;
+
       if (regex.test(type.name) || regex.test(type.fullName) || (type.summary && regex.test(type.summary))) {
         results.push({
           type: type.fullName,
+          package: type.package,
           kind: type.kind,
           summary: type.summary,
         });
         if (results.length >= MAX_RESULTS) break;
       }
 
-      // Search members
       for (const m of type.members) {
         if (results.length >= MAX_RESULTS) break;
         if (
@@ -330,6 +371,7 @@ export async function handleSearchApi(
         ) {
           results.push({
             type: type.fullName,
+            package: type.package,
             member: m.name,
             kind: m.kind,
             summary: m.summary,
@@ -347,11 +389,13 @@ export async function handleSearchApi(
 
   let yaml = 'api_search:\n';
   yaml += ` query: ${yStr(args.query)}\n`;
+  if (args.package) yaml += ` package: ${yStr(args.package)}\n`;
   yaml += ` total: ${results.length}\n`;
   yaml += ' results:\n';
 
   for (const r of results) {
     yaml += `  - type: ${yStr(r.type)}\n`;
+    if (r.package) yaml += `    package: ${yStr(r.package)}\n`;
     if (r.member) yaml += `    member: ${yStr(r.member)}\n`;
     yaml += `    kind: ${r.kind}`;
     if (r.summary) yaml += `\n    summary: ${yStr(r.summary)}`;

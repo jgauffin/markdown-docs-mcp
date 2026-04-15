@@ -182,6 +182,7 @@ export class TypeDocParser implements ApiDocParser {
     // Must look like a TypeDoc project (kind=1 with children)
     if (!root || root.kind !== Kind.Project || !root.children) return [];
 
+    const pkg = typeof root.name === "string" ? root.name : undefined;
     const nsMap = new Map<string, ApiType[]>();
 
     const processChildren = (children: TdReflection[], nsPrefix: string) => {
@@ -212,6 +213,7 @@ export class TypeDocParser implements ApiDocParser {
           name: typeName,
           fullName,
           kind: typeKind,
+          package: pkg,
           summary: extractCommentText(comment),
           remarks: extractBlockTag(comment, "@remarks"),
           members: [],

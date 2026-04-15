@@ -19,6 +19,8 @@ export interface ApiType {
   name: string;
   fullName: string;
   kind: "class" | "interface" | "struct" | "enum" | "delegate" | "function" | "type-alias";
+  /** Package this type belongs to — language-agnostic (C# assembly, npm package, crate, etc). */
+  package?: string;
   summary?: string;
   remarks?: string;
   members: ApiMember[];
